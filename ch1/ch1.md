@@ -34,7 +34,7 @@ use core::arch::global_asm;
 
 mod lang_items;
 
-// 用汇编写的整个函数的入口，global_asm会把汇编文件的内容展开在这里，里面定义了linker.ld中规定的入口_start
+// 用汇编写的整个函数的入口，global_asm会把汇编文件的内容展开在这里，里面定义了linker.ld中规定的入口_start。Rust编译器不会自动处理.s/.S/.asm等汇编文件，所以用global_asm!在.rs中引入，这样汇编代码就会生成在.o文件中。
 global_asm!(include_str!("entry.asm"));
 
 #[no_mangle]
@@ -149,6 +149,10 @@ Ctrl + A 是 QEMU 的“命令前缀键”
 ![img](img/chap1-intro.png)
 
 所以，通过ecall调sbi就能打印！
+
+[关于特权级](https://learningos.cn/rCore-Camp-Guide-2025S/chapter1/4mini-rt-baremetal.html#id3)，指导书有说明：
+
+应用程序访问操作系统提供的系统调用的指令是ecall，操作系统访问 RustSBI提供的SBI调用的指令也是ecall， 虽然指令一样，但它们所在的特权级是不一样的。简单地说，应用程序位于最弱的用户特权级（User Mode）， 操作系统位于内核特权级（Supervisor Mode），RustSBI位于机器特权级（Machine Mode）。
 
 sbi.rs:
 ```Rust
