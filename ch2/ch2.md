@@ -279,12 +279,28 @@ unsafe {
     )) as *const _ as usize);
 }
 ```
-push_context()往内核栈里推了个TrapContext进去。这个参数通过a0传递给__restore函数，而__restore函数：
+push_context()往内核栈里推了个TrapContext进去供__restore消费，且push_context的返回值为新内核栈栈顶。
+```Rust
+impl KernelStack {
+    fn get_sp(&self) -> usize {
+        self.data.as_ptr() as usize + KERNEL_STACK_SIZE
+    }
+    pub fn push_context(&self, trap_cx: TrapContext) -> usize {
+        let trap_cx_ptr = (self.get_sp() - core::mem::size_of::<TrapContext>()) as *mut TrapContext;
+        unsafe {
+            *trap_cx_ptr = trap_cx;
+        }
+        trap_cx_ptr as usize
+    }
+}
+```
+
+push_context之后内核栈顶往下移动了sizeof(TrapContext)，trap_cx_ptr(最新的内核栈顶位置)作为参数通过a0传递给__restore函数，而__restore函数：
 ```asm
 __restore:
     # case1: start running app by __restore
     # case2: back to U after handling trap
-    mv sp, a0 # 把内核栈顶赋给sp，现在sp指向内核栈顶，现在为用户程序的执行恢复上下文
+    mv sp, a0 # 把最新的内核栈顶赋给sp，现在sp指向内核栈顶，现在为用户程序的执行恢复上下文
     # now sp->kernel stack(after allocated), sscratch->user stack
     # restore sstatus/sepc
     ld t0, 32*8(sp)
@@ -302,7 +318,7 @@ __restore:
         .set n, n+1
     .endr
     # release TrapContext on kernel stack
-    addi sp, sp, 34*8
+    addi sp, sp, 34*8 # 把内核栈顶的TrapContext释放掉，TrapContext的大小就是34 * 8
     # now sp->kernel stack, sscratch->user stack
     csrrw sp, sscratch, sp # 交换之后sp指向用户栈，而sscratch指向内核栈
     sret # 执行 sret（Supervisor Return）指令时，机器会自动跳转到 sepc 中保存的地址，这样就切换到执行用户程序了
