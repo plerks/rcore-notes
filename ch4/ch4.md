@@ -136,9 +136,28 @@ VSCode launch.json配置:
 
 试了下ch4，以上步骤之后能停住。
 
+试了下ch5，将`MODE := release`改成`MODE := debug`后，**必须把栈改大，而且3个地方都要改**！否则别说去`make gdbserver`调试，`make run BASE=2`就会直接出问题，ch5实现的shell的命令提示符都打印不出来直接卡死（看起来debug模式编译更容易爆栈了？）。实测改成40960就够了：
+```
+os/src/entry.asm中改成：
+
+boot_stack_lower_bound:
+    .space 40960 * 16 # 原本是4096 * 16
+    .globl boot_stack_top
+boot_stack_top:
+
+---
+
+os/src/config.rs中改成：
+
+/// user app's stack size
+pub const USER_STACK_SIZE: usize = 40960 * 2; // 原本是4096 * 2
+/// kernel stack size
+pub const KERNEL_STACK_SIZE: usize = 40960 * 2; // 原本是4096 * 2
+```
+
 **这里有个有意思的问题**，qemu运行起来后，为什么用riscv64-unknown-elf-gdb可以调试它？我们甚至都还没进程的概念，可执行文件里的调试信息是什么样的？断点的原理是换成int 3指令(risc-v为ebreak)，对于直接使用物理地址或实现了虚拟地址空间，riscv64-unknown-elf-gdb怎么知道该去内存哪里换指令的？
 
-直接使用物理地址的情况很好理解，不多说。对于我们现在ch4实现了虚拟地址空间的情况，我的理解是：比如我`b sys_trace`，sys_trace是os/的代码，而内核态整个地址空间都是恒等映射，所以可执行文件调试信息里的sys_trace的地址(链接器最后会计算出来sys_trace这个符号的地址)，最后在恒等映射下就会是物理地址，所以gdb按符号表里的地址去把内存改成ebreak指令的内容，刚好能触发断点。这样看来，**以上调试步骤只能对os/的代码work**（user/不是恒等映射，打断点应该是不能work，没去试）
+直接使用物理地址的情况很好理解，不多说。对于我们现在ch4实现了虚拟地址空间的情况，我的理解是：比如我`b sys_trace`，sys_trace是os/的代码，而内核态整个地址空间都是恒等映射，所以可执行文件调试信息里的sys_trace的地址(链接器最后会计算出来sys_trace这个符号的地址)，最后在恒等映射下就会是物理地址，所以gdb按符号表里的地址去把内存改成ebreak指令的内容，刚好能触发断点。这样看来，**以上调试步骤只能对os/的代码work**（user/不是恒等映射，打断点应该是不能work，没去试，而且rcore从ch4开始才是用xmas_elf读编译出的用户文件的.elf加载用户程序的，前面几章是用的.bin，根本没有符号信息，但是即使是.elf，并且gdb运行起来后用gdb的add-symbol-file指令加载符号文件并指定文件装载的基址，由于虚拟地址空间，应该也是断不下来的）
 
 ## 自定义用例运行（例如只运行单个用例）
 修改user/Makefile，修改里面编译user/src/bin下的哪些文件的逻辑，TESTS控制编译哪些章的用例，文件名被枚举到了APPS中，所以手动设定这两个变量的值即可自定义逻辑。
