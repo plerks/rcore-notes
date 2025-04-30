@@ -110,3 +110,61 @@ unsafe {
 }
 ```
 直接丢弃了第一次运行用户程序时的内核状态，因为不需要。
+
+## 关于stride调度算法
+[stride算法](https://learningos.cn/rCore-Camp-Guide-2025S/chapter5/4exercise.html#stride)的思路为：
+
+1. 为每个进程赋予一个 stride 值，每个进程有自己的优先级 priority。进程 stride 值初始为0，stride 调度要求进程优先级 >= 2。
+
+2. 要选出进程调度时，选择 stride 值最小的那个进程。
+
+3. 对于获得调度的进程，将对应的 stride 加上其对应的步长 pass = BigStride / priority。BigStride 表示一个预先定义的较大常数。
+
+每次选最小的 stride 出来运行，而每次加上的步长为 BigStride / priority，所以进程的 priority 值越大，stride 值增加越慢，越容易得到执行。
+
+关于stride算法对stride值可能发生溢出的比较处理，直接把[报告](https://github.com/LearningOS/2025s-rcore-plerks/blob/ch5/reports/lab3.md)中的笔记贴过来：
+
+---
+
+我们要比较两个stride值的大小，但是stride值随着不断+pass，是有可能溢出的，如何处理？
+
+首先，参考[rcore-camp-guide](https://learningos.cn/rCore-Camp-Guide-2025S/chapter5/4exercise.html)，
+stride 调度要求进程优先级 >= 2，初始各进程stride值都为0，每次选最小的stride出来，加上步进值pass = BigStride / priority，所以系统变化过程中会维持：
+
+STRIDE_MAX – STRIDE_MIN <= BigStride / 2
+
+在没有发生溢出的情况下，我们是能正确比较stride值的大小的，但是问题在于进程运行时间久了stride值可能溢出，例如当两个进程stride值`{1111_1110, 1111_1111}` -> `{(1)0000_0000, 1111_1111}`时(第一个stride值加了pass 2)，
+无符号数比较会认为0000_0000小从而调度运行它，实际上0000_0000是变大越界的数。
+
+把stride值当成有符号数来比较也是不行的，虽然上面的边界情况能处理，但是对于`{0111_1110, 0111_1111}` -> `{1000_0000, 0111_1111}`，
+会继续选择1000_0000出来运行。
+
+那么，怎样的策略才能使得即便考虑溢出，我们也能正确进行stride值的比较？
+
+机器数构成一个环 0000_0000 ... 0111_1111 1000_0000 ... 1111_1111
+
+在环上，stride值都是顺时针在跑（stride值增大），只要不超过一整圈，两个stride值a, b相减就是他们之间的距离（可正可负）。
+
+（一圈是指例如stride是u8，所有u8的数构成一个环）
+
+于是我们考虑 a - b，把 a - b 转成有符号数，判断正负即可知道到底是a在前面还是b在前面。（也可以不转有符号数，直接判断最高位是0/1）
+
+但是这里还有个问题，a - b 不能溢出符号位，否则判断 a - b 的正负会有问题。也就是说a不能在b前面太多，a如果在b前面1000_0000步，我们会误认为这是个负数，会误以为a在b后面。
+
+而由STRIDE_MAX – STRIDE_MIN <= BigStride / 2，BigStride可以设为255，即保证了 a - b 不会溢出符号位，也保证了不会超过一整圈。
+
+为什么BigStride要取上界？
+
+不然的话有效的priority取值少，例如BigStride是3，那么不管priority怎么取，BigStride / priority只会是 1 或者 0
+
+**总结一句话：算 a - b 的正负，且要控制差值不能溢出符号位。**
+
+通过判断 (signed)(a - b) 的正负，本来要无限位长来记stride值，现在不用了。
+
+---
+
+BigStride / priority 得到的结果值域不全，例如 BigStride 为255，那么能得到的商依次是 127, 85, 63...
+
+是不是可以改成直接 stride += priority 而不是 stride += BigStride / priority ?
+
+这样虽然"priority值的大小"与"容易获得调度"相反了，但是能增加步进值的取值种数。
