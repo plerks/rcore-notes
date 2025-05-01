@@ -168,3 +168,11 @@ BigStride / priority 得到的结果值域不全，例如 BigStride 为255，那
 是不是可以改成直接 stride += priority 而不是 stride += BigStride / priority ?
 
 这样虽然"priority值的大小"与"容易获得调度"相反了，但是能增加步进值的取值种数。
+
+补充：[rcore-camp-guide](https://learningos.cn/rCore-Camp-Guide-2025S/chapter5/4exercise.html)有提：
+
+> 可以证明，如果令 P.pass = BigStride / P.priority，其中 P.priority 表示进程的优先权（大于 1），而 BigStride 表示一个预先定义的大常数，则该调度方案为每个进程分配的时间将与其优先级成正比。
+
+把步长定义为 BigStride / priority 应该是为了达到**各个进程被运行次数与 priority 成正比**的效果(即各进程的运行次数 / priority都大致相等)。
+
+要走距离 L，步长为 BigStride / priority，于是需要的被运行次数就为 priority * (L / BigStride)，步长设计成除以 priority 能达到正比效果。设计成 + priority 会变成反比。
