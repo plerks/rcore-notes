@@ -141,6 +141,19 @@ Error: Process completed with exit code 1.
 
 补充: 把ch7上的commit force push消掉，就能让ch8的ci正常跑，现在ch8能正常通过所有ci阶段，所以ch8代码没有问题。但是我把ch7上的commit重新推回去，结果ch7 ci竟然也通过了。现在训练营网页上统计成600分了，难蹦。
 
+再补充: 改了下实验仓库的.github/workflows/build.yml的逻辑:
+```yaml
+score=$(( $(grep -o 'ch' classroom/latest.json | wc -l) * 100))
+
+改成:
+
+# 修改score的统计逻辑, 让它忽略ch7, 不然我ch7上有commit, 会把ch7也算分, 最后会有600分
+# score=$(( $(grep -o 'ch' classroom/latest.json | wc -l) * 100))
+score=$(( $(grep -Po 'ch(?!7)' classroom/latest.json | wc -l) * 100 ))
+score=$(( score < 500 ? score : 500 ))
+```
+写了忽略ch7和score与500取min的逻辑，但是看来训练营数据库里好像只记录出现的最高分, 改了没用, 训练营网页上还是600分。
+
 ## 更多
 
 更多内容见本仓库各个章节的笔记。
