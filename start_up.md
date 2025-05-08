@@ -139,6 +139,8 @@ Error: Process completed with exit code 1.
 ```
 应该是分数会算出来600分，所以拒绝了。basic-test阶段通过说明代码没问题。
 
+补充: 把ch7上的commit force push消掉，就能让ch8的ci正常跑，现在ch8能正常通过所有ci阶段，所以ch8代码没有问题。但是我把ch7上的commit重新推回去，结果ch7 ci竟然也通过了。现在训练营网页上统计成600分了，难蹦。
+
 ## 更多
 
 更多内容见本仓库各个章节的笔记。
