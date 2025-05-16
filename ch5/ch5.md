@@ -84,6 +84,40 @@ ch4中，任务个数是提前确定的，保存在了TaskManagerInner的`tasks:
 
 而在ch5中，我们实现了shell并以shell为入口等待用户的操作，要运行的进程个数不是提前确定好的，而是在run_tasks()中通过fetch_task()拿到一个任务来运行。这就还需要一个执行流，即run_tasks()里的无限loop取任务来运行的执行流，**这个内核的无限loop执行流应该就是指导书中说的idle执行流**。当没有任务ready时，会执行这个loop执行流等待shell输入要执行的任务。这个loop执行流是shell的那个不需要结束的取用户程序的任务（和用户程序流不同的是其在内核）
 
+```Rust
+// os/src/task/processor.rs
+
+pub struct Processor {
+    current: Option<Arc<TaskControlBlock>>,
+
+    idle_task_cx: TaskContext,
+}
+
+pub fn run_tasks() {
+    loop {
+        let mut processor = PROCESSOR.exclusive_access();
+        if let Some(task) = fetch_task() {
+            let idle_task_cx_ptr = processor.get_idle_task_cx_ptr();
+            // access coming task TCB exclusively
+            let mut task_inner = task.inner_exclusive_access();
+            let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
+            task_inner.task_status = TaskStatus::Running;
+            // release coming task_inner manually
+            drop(task_inner);
+            // release coming task TCB manually
+            processor.current = Some(task);
+            // release processor manually
+            drop(processor);
+            unsafe {
+                __switch(idle_task_cx_ptr, next_task_cx_ptr);
+            }
+        } else {
+            warn!("no tasks available in run_tasks");
+        }
+    }
+}
+```
+
 Processor.idle_task_cx存的是什么？
 
 第一次 run_tasks() -> loop -> fetch_task()成功 -> __switch(idle_task_cx_ptr, next_task_cx_ptr) 后，loop执行流就被保存在了idle_task_cx中，所以Processor.idle_task_cx保存了loop执行流。
@@ -95,6 +129,9 @@ Processor.idle_task_cx存的是什么？
 而在 schedule() 中，__switch的调用方式为 __switch(switched_task_cx_ptr, idle_task_cx_ptr)，又切回了loop控制流，于是又回到了尝试fetch用户task运行的状态。
 
 ---
+
+### 内核的忙等待
+当没有任务需要运行时，例如shell没有接收到任何用户的操作指令，run_tasks()这个loop是个busy_loop，所以ch5 `make run`把os/的shell一跑起来后，还什么都没输入，我笔记本风扇就开始加速。但是在[第三阶段](https://github.com/LearningOS/2025s-arceos-plerks)的arceos中，出现了`riscv::asm::wfi()`这个函数，内容应该是`wfi`这条指令。应该是可以解决内核忙等待的问题，后面再看。
 
 ### ch4中这个idle执行流怎么体现的？
 

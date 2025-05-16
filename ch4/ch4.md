@@ -159,6 +159,22 @@ pub const KERNEL_STACK_SIZE: usize = 40960 * 2; // 原本是4096 * 2
 
 直接使用物理地址的情况很好理解，不多说。对于我们现在ch4实现了虚拟地址空间的情况，我的理解是：比如我`b sys_trace`，sys_trace是os/的代码，而内核态整个地址空间都是恒等映射，所以可执行文件调试信息里的sys_trace的地址(链接器最后会计算出来sys_trace这个符号的地址)，最后在恒等映射下就会是物理地址，所以gdb按符号表里的地址去把内存改成ebreak指令的内容，刚好能触发断点。这样看来，**以上调试步骤只能对os/的代码work**（user/不是恒等映射，打断点应该是不能work，没去试，而且rcore从ch4开始才是用xmas_elf读编译出的用户文件的.elf加载用户程序的，前面几章是用的.bin，根本没有符号信息，但是即使是.elf，并且gdb运行起来后用gdb的add-symbol-file指令加载符号文件并指定文件装载的基址，由于虚拟地址空间，应该也是断不下来的）
 
+---
+
+后面的章节有了文件系统后，为了调试：
+
+1. boot_stack、USER_STACK_SIZE、KERNEL_STACK_SIZE都改大（见上文）
+
+2. 把os/Makefile和user/Makefile都改成`MODE := debug`，并且os/Makefile fs-img规则，把-t的路径改成`-t ../user/target/riscv64gc-unknown-none-elf/$(MODE)/`
+
+3. **easy-fs-fuse/src/main.rs里也有两个数字要改大**。`f.set_len(16 * 2048 * 512).unwrap()` -> `f.set_len(160 * 2048 * 512).unwrap()`，`let efs = EasyFileSystem::create(block_file, 16 * 2048, 1)` -> `let efs = EasyFileSystem::create(block_file, 160 * 2048, 1)`。要把代表磁盘的fs.img文件的大小设置得大一些，否则运行`LOG=DEBUG make gdbserver BASE=2`，read_block()中`assert_eq!(file.read(buf).unwrap(), BLOCK_SZ, "Not a complete block!");`会报错(left: 0, right: 512)。
+
+    原因在于，easy-fs-fuse/src/main.rs中，先打开了fs.img文件，然后`f.set_len(16 * 2048 * 512).unwrap()`把fs.img文件大小设置为16 * 2048 * 512B (16 * 2048个块，16M)，这和`let efs = EasyFileSystem::create(block_file, 16 * 2048, 1)`有16 * 2048个块大小是一致的，因为这里就是在用fs.img模拟文件系统磁盘。然后`for app in apps { ... }`把编译出的用户程序(例如ch3b_yield0...)写入文件系统(fs.img)。用户程序写入文件系统是通过write_at()完成的，DiskInode.write_at()会调BlockCacheManager.get_block_cache()，BlockCacheManager.get_block_cache()里面会调BlockCache::new()，这个里面会调read_block()，而read_block()会根据block_id参数从fs.img中指定偏移位置把磁盘block读出来到内存进行cache，然后BLOCK_CACHE_MANAGER会在调sync()或者cache淘汰时将内容写回磁盘。这样就完成了文件内容写入。也就是说，要完成内容写入磁盘，write_at -> get_block_cache (含read_block())，然后后面调sync()或者cache淘汰时写回 (会调write_block())。**read_block()会比write_block()先调**。由于debug模式下编译出的用户程序比较大，所以将用户程序写入磁盘(fs.img)时，单单把fs.img设置为16 * 2048 * 512B (16M)不够，调read_block()把磁盘内容cache到内存那步就超出了文件范围，所以读出的字节数为0，assert_eq失败。**所以要加大"磁盘"大小**。
+
+然后同上：`LOG=DEBUG make gdbserver BASE=2` ...
+
+用ch8来测试，可以停住。
+
 ## 自定义用例运行（例如只运行单个用例）
 修改user/Makefile，修改里面编译user/src/bin下的哪些文件的逻辑，TESTS控制编译哪些章的用例，文件名被枚举到了APPS中，所以手动设定这两个变量的值即可自定义逻辑。
 ```Makefile
