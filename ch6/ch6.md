@@ -127,7 +127,7 @@ easy-fs 磁盘按照块编号从小到大顺序分成 5 个连续区域：
 
 > 为了充分利用空间，我们将 DiskInode 的大小设置为 128 字节，每个块正好能够容纳 4 个 DiskInode 。在后续需要支持更多类型的元数据的时候，可以适当缩减直接索引 direct 的块数，并将节约出来的空间用来存放其他元数据，仍可保证 DiskInode 的总大小为 128 字节。
 
-所以Inode要 block_id + block_offset 才能对应上DiskInode。
+所以Inode要 block_id + block_offset 才能对应上DiskInode，见easy-fs/src/efs.rs get_disk_inode_pos()。
 
 DiskInode提供了`read_at`和`write_at`两个关键方法，可以读写DiskInode所代表文件的**数据部分**。其通过`get_block_cache`实现。
 
@@ -202,6 +202,7 @@ pub struct DirEntry {
     inode_id: u32,
 }
 ```
+一个 DirEntry 的大小为 DIRENT_SZ = 32 个字节。
 
 inode是对数据块的索引，可以是对一个文件的，也可以是对一个目录的。对于inode索引到的数据块，文件的数据块没有格式，而目录的数据块相当于`Vec<DirEntry>`，DirEntry相当于指向inode的指针，而一个inode代表一个文件/目录。
 
