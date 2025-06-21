@@ -3,6 +3,8 @@ ch8实现线程之后，ProcessControlBlock为进程控制块，TaskControlBlock
 
 [实验报告](https://github.com/LearningOS/2025s-rcore-plerks/blob/ch8/reports/lab5.md)，里面有ch8实现的银行家算法的笔记以及另外一些描述。
 
+简而言之就是在分配之前用银行家算法检测一下安全性，若不安全则拒绝分配。若安全，才放行执行mutex.lock/semaphore.down。对available和allocation的修改是在mutex.lock/unlock、semaphore.up/down真正获取/释放时才有权去修改。银行家算法只起个检查作用，没多少权限。（改银行家表写在lock等函数返回后即可，这时已经完成了资源获取/释放。不需要去写在lock等函数里面）。
+
 ch8实现的mutex, semaphore和condition都是操作系统级别的资源。
 
 ## Mutex
